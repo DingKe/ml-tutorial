@@ -1,0 +1,17 @@
+*.DS_Store
+*.pyc
+*.swp
+temp/*
+dist/*
+build/*
+tags
+
+# test-related
+.coverage
+.cache
+
+# developer environments
+.idea
+
+# jupyter notebook
+.ipynb_checkpoints
