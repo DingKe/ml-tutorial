@@ -208,5 +208,41 @@ def test_train_gmm():
             train_gmm(gmm, x, threshold=1e-2)
 
 
+def demo():
+    import matplotlib.pyplot as plt
+
+    np.random.seed(1111)
+    dim, k = 2, 2
+
+    # generate data
+    num = 50
+    mean1 = np.zeros(dim)
+    mean2 = np.ones(dim) * 2
+    cov1 = np.eye(dim)
+    cov2 = np.eye(dim) * 0.5
+
+    x1 = np.random.multivariate_normal(mean1, cov1, [num, ])
+    x2 = np.random.multivariate_normal(mean2, cov2, [num, ])
+    x = np.concatenate([x1, x2], 0)
+
+    plt.scatter(x1[:, 0], x1[:, 1], c='r')
+    plt.scatter(x2[:, 0], x2[:, 1], c='g')
+
+    # init GMM
+    gs = []
+    ids = np.random.choice(range(len(x)), k, replace=False)
+    for i in range(k):
+        mean = x[ids[i]]
+        cov = np.eye(dim)
+        gs.append(Gauss(dim, mean, cov))
+    gmm = GMM(gs)
+    centers = np.stack([gmm[i].mean for i in range(gmm.k)])
+    plt.scatter(centers[:, 0], centers[:, 1], c='b', s=50, marker='v')
+
+    train_gmm(gmm, x, threshold=1e-4)
+    centers = np.stack([gmm[i].mean for i in range(gmm.k)])
+    plt.scatter(centers[:, 0], centers[:, 1], c='y', s=500, marker='^')
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-s'])
