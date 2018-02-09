@@ -210,6 +210,7 @@ def test_train_gmm():
 
 def demo():
     import matplotlib.pyplot as plt
+    from kmeans import kmeans_cluster
 
     np.random.seed(1111)
     dim, k = 2, 2
@@ -230,10 +231,10 @@ def demo():
 
     # init GMM
     gs = []
-    ids = np.random.choice(range(len(x)), k, replace=False)
+    centers = kmeans_cluster(x, k)
     for i in range(k):
-        mean = x[ids[i]]
-        cov = np.eye(dim)
+        mean = centers[i]
+        cov = np.eye(dim) * 0.1
         gs.append(Gauss(dim, mean, cov))
     gmm = GMM(gs)
     centers = np.stack([gmm[i].mean for i in range(gmm.k)])
