@@ -229,14 +229,26 @@ def demo():
     plt.scatter(x1[:, 0], x1[:, 1], c='r')
     plt.scatter(x2[:, 0], x2[:, 1], c='g')
 
-    # init GMM
+    # init GMM with kmeans
     gs = []
-    centers = kmeans_cluster(x, k)
+    centers, assignment = kmeans_cluster(x, k)
+    weight = []
     for i in range(k):
+        # mean
         mean = centers[i]
-        cov = np.eye(dim) * 0.1
+
+        # covariate
+        cov = np.eye(dim) * 1e-6
+        count = 0.
+        for j in range(num * 2):
+            if i == assignment[j]:
+                cov += np.outer(mean - x[j], mean - x[j])
+                count += 1
+        cov /= count
+        weight.append(count / len(x))
+
         gs.append(Gauss(dim, mean, cov))
-    gmm = GMM(gs)
+    gmm = GMM(gs, weight)
     centers = np.stack([gmm[i].mean for i in range(gmm.k)])
     plt.scatter(centers[:, 0], centers[:, 1], c='b', s=50, marker='v')
 
