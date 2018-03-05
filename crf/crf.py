@@ -28,7 +28,7 @@ def logsumexp(a, b):
 
 def _crf_forward(emit_score, P, S=None, E=None):
     batch_size, seq_len, voc = emit_score.size()
-    log_alpha = emit_score.new(batch_size, seq_len, voc).fill_(-10000)
+    log_alpha = emit_score.new(batch_size, seq_len, voc)
 
     # temp storage
     energy = P.new(batch_size, voc, voc)
@@ -44,20 +44,17 @@ def _crf_forward(emit_score, P, S=None, E=None):
         energy += emit_score[:, t, :].unsqueeze(1).expand(batch_size, voc, voc)  # emit score
 
         log_alpha_tm1 = log_alpha[:, t - 1, :].unsqueeze(1).expand(batch_size, voc, voc)
-        pre = reduce_logsumexp(log_alpha_tm1 + energy, dim=-1)
+        log_alpha[:, t, :] = reduce_logsumexp(log_alpha_tm1 + energy, dim=-1)
 
-        log_alpha[:, t, :] = logsumexp(log_alpha[:, t, :], pre)
-
-    if E is not None:
-        log_alpha[:, -1, :] += E.unsqueeze(0).expand(batch_size, voc)
-
+    #if E is not None:
+    #    log_alpha[:, -1, :] += E.unsqueeze(0).expand(batch_size, voc)
 
     return log_alpha
 
 
 def _crf_backward(emit_score, P, S=None, E=None):
     batch_size, seq_len, voc = emit_score.size()
-    log_beta = emit_score.new(batch_size, seq_len, voc).fill_(-10000)
+    log_beta = emit_score.new(batch_size, seq_len, voc)
 
     # temp storage
     energy = P.new(batch_size, voc, voc)
@@ -65,16 +62,14 @@ def _crf_backward(emit_score, P, S=None, E=None):
     if E is not None:
        log_beta[:, -1, :] = E.unsqueeze(0).expand(batch_size, voc)
     else:
-       log_beta[:, -1, :] = 1
+       log_beta[:, -1, :] = 0
 
     for t in range(seq_len - 2, -1, -1):
         energy[:] = P.unsqueeze(0).expand(batch_size, voc, voc)  # transmit score
         energy += emit_score[:, t, :].unsqueeze(1).expand(batch_size, voc, voc)  # emit score
 
-        log_beta_tp1 = log_beta[:, t + 1, :].unsqueeze(1).expand(batch_size, voc, voc)
-        post = reduce_logsumexp(log_beta_tp1 + energy, dim=-1)
-
-        log_beta[:, t, :] = logsumexp(log_beta[:, t, :], post)
+        log_beta_tp1 = log_beta[:, t + 1, :].unsqueeze(-1).expand(batch_size, voc, voc)
+        log_beta[:, t, :] = reduce_logsumexp(log_beta_tp1 + energy, dim=1)
 
     if S is not None:
         log_beta[:, 0, :] += S.unsqueeze(0).expand(batch_size, voc)
@@ -97,7 +92,10 @@ class CRFF(Function):
         ctx.log_beta = _crf_backward(emit_score, P, S, E)
 
         # norm
-        ctx.log_Z = reduce_logsumexp(ctx.log_alpha[:, -1, :], dim=-1)
+        if E is not None:
+            ctx.log_Z = reduce_logsumexp(ctx.log_alpha[:, -1, :] + E.unsqueeze(0).expand(batch_size, voc), dim=-1)
+        else:
+            ctx.log_Z = reduce_logsumexp(ctx.log_alpha[:, -1, :], dim=-1)
 
         # score for y
         labels_l = labels[:, :-1]
@@ -151,6 +149,15 @@ class CRFF(Function):
         else:
             E_grad = None
 
+        # end boundary
+        if E is not None:
+            log_psi = E.data.unsqueeze(0).expand(batch_size, voc)
+            delta = labels.data[:, -1:].expand(batch_size, voc) == torch.arange(0, voc).type(torch.LongTensor).unsqueeze(0).expand(batch_size, voc)
+            delta = delta.type(dtype)
+            delta_log_psi = torch.exp(ctx.log_alpha[:, -1, :] - ctx.log_Z.unsqueeze(-1) + log_psi) - delta
+
+            E_grad.data += delta_log_psi.sum(0)
+
         # normal cases
         for t in range(1, seq_len):
             for i in range(voc):
@@ -162,22 +169,14 @@ class CRFF(Function):
                     P_grad.data[i, j] += delta_log_psi.sum()
 
         # start boundary
-        for i in range(voc):
-            log_psi = emit_score.data[:, 0, i] + (S.data[i] if S is not None else 0)
-            delta = (labels.data[:, 0] == i).type(dtype)
-            delta_log_psi = torch.exp(ctx.log_beta[:, 0, i] - ctx.log_Z + log_psi) - delta
-            input_grad.data[:, 0, i] += delta_log_psi
-            if S_grad is not None:
-                S_grad.data[i] += delta_log_psi.sum()
+        log_psi = emit_score.data[:, 0, :] + (S.data.unsqueeze(0).expand(batch_size, voc) if S is not None else 0)
+        delta = labels.data[:, :1].expand(batch_size, voc) == torch.arange(0, voc).type(torch.LongTensor).unsqueeze(0).expand(batch_size, voc)
+        delta = delta.type(dtype)
+        delta_log_psi = torch.exp(ctx.log_beta[:, 0, :] - ctx.log_Z.unsqueeze(-1) + log_psi) - delta
 
-        # end boundary
-        for i in range(voc):
-            log_psi = E.data[i] if E is not None else 0
-            delta = (labels.data[:, -1] == i).type(dtype)
-            delta_log_psi = torch.exp(ctx.log_alpha[:, -1, i] - ctx.log_Z + log_psi) - delta
-            input_grad.data[:, -1, i] += delta_log_psi
-            if E_grad is not None:
-                E_grad.data[i] += delta_log_psi.sum()
+        input_grad.data[:, 0, :] += delta_log_psi
+        if S is not None:
+            S_grad.data += delta_log_psi.sum(0)
 
         if ctx.size_average:
             input_grad.data.div_(y.size(0))
