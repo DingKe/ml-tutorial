@@ -30,9 +30,9 @@ class CRFLoss(nn.Module):
     def reset_parameters(self):
         nn.init.normal(self.P.data, 0, 1)
         if self.S is not None:
-            nn.init.normal(self.S, 0)
+            nn.init.constant(self.S, 0)
         if self.E is not None:
-            nn.init.normal(self.E, 0)
+            nn.init.constant(self.E, 0)
 
     def forward(self, logits, labels, auto_grad=True):
         if auto_grad:
