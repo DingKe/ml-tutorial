@@ -217,8 +217,6 @@ def train(plda, data, iterations):
     initialize(plda, N, S, mu) 
 
     for i in range(iterations):
-        print_progress(plda, pooled_data, i, iterations)
-
         if plda.type == 'inv':
             T, R, Y = inv_e_step(plda, data, N, f, S)
             inv_m_step(plda, T, R, Y, N, S)
@@ -227,7 +225,7 @@ def train(plda, data, iterations):
             full_m_step(plda, T, R, P, E, N, K, S)
         
         # Print current progress
-        #print_progress(plda, pooled_data, i, iterations)
+        print_progress(plda, pooled_data, i, iterations)
         
 
 def test_plda():
@@ -277,8 +275,7 @@ def test_train():
     print(plda.mu)
     print(plda.B)
     print(plda.W)
-    
-    
+     
         
 if __name__ == '__main__':
     test_plda()
